@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="PotholeNet" />
+  <meta name="description" content="Community pothole detection and city reporting app" />
+  <title>PotholeNet</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    /* ===================== RESET & BASE ===================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0a;
+      --bg2: #111111;
+      --bg3: #1a1a1a;
+      --bg4: #222222;
+      --orange: #f97316;
+      --orange-dim: #c2570f;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --text: #f1f5f9;
+      --text2: #94a3b8;
+      --border: #2a2a2a;
+      --radius: 12px;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bot: env(safe-area-inset-bottom, 0px);
+    }
+    html, body {
+      height: 100%; width: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===================== APP SHELL ===================== */
+    #app {
+      height: 100dvh;
+      display: flex; flex-direction: column;
+      padding-top: var(--safe-top);
+    }
+    .screen {
+      display: none; flex-direction: column;
+      flex: 1; overflow: hidden;
+    }
+    .screen.active { display: flex; }
+
+    /* ===================== NAV BAR ===================== */
+    #nav {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-around; align-items: center;
+      padding: 8px 0 calc(8px + var(--safe-bot));
+      position: relative; z-index: 100; flex-shrink: 0;
+    }
+    .nav-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: none; border: none; color: var(--text2);
+      font-size: 10px; padding: 6px 16px; border-radius: 8px;
+      cursor: pointer; transition: color 0.15s, background 0.15s;
+      min-width: 60px;
+    }
+    .nav-btn .nav-icon { font-size: 22px; line-height: 1; }
+    .nav-btn.active { color: var(--orange); }
+    .nav-btn:active { background: var(--bg3); }
+
+    /* ===================== COMMON HEADER ===================== */
+    .screen-header {
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      padding: 16px 20px; display: flex; align-items: center; gap: 12px;
+      flex-shrink: 0;
+    }
+    .screen-header h2 { font-size: 18px; font-weight: 700; }
+    .screen-header .badge {
+      margin-left: auto; background: var(--orange);
+      color: #000; font-size: 11px; font-weight: 800;
+      padding: 2px 8px; border-radius: 20px;
+    }
+
+    /* ===================== SCROLLABLE CONTENT ===================== */
+    .scroll-area {
+      flex: 1; overflow-y: auto; overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ===================== BUTTONS ===================== */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      border: none; border-radius: var(--radius); cursor: pointer;
+      font-size: 15px; font-weight: 700; padding: 14px 24px;
+      transition: transform 0.1s, opacity 0.15s;
+      text-decoration: none;
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary { background: var(--orange); color: #000; }
+    .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-green { background: var(--green); color: #000; }
+    .btn-full { width: 100%; }
+    .btn-sm { font-size: 13px; padding: 8px 16px; border-radius: 8px; }
+    .btn-icon { padding: 10px; border-radius: 50%; width: 44px; height: 44px; font-size: 18px; }
+    .btn:disabled { opacity: 0.4; pointer-events: none; }
+
+    /* ===================== SCREEN: HOME ===================== */
+    #screen-home .scroll-area {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 24px 20px 32px; gap: 24px;
+    }
+    .logo-area { text-align: center; }
+    .logo-area .logo { font-size: 56px; margin-bottom: 8px; }
+    .logo-area h1 {
+      font-size: 32px; font-weight: 900;
+      background: linear-gradient(135deg, var(--orange), #fbbf24);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .logo-area .tagline { color: var(--text2); font-size: 14px; margin-top: 6px; }
+
+    .stats-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 12px; width: 100%;
+    }
+    .stat-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 16px; text-align: center;
+    }
+    .stat-card .stat-val {
+      font-size: 32px; font-weight: 900; color: var(--orange);
+      line-height: 1;
+    }
+    .stat-card .stat-label { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+    .start-section { width: 100%; }
+    #btn-start-driving {
+      font-size: 20px; padding: 20px;
+      border-radius: 16px; width: 100%;
+      box-shadow: 0 0 40px rgba(249,115,22,0.3);
+    }
+    .permission-note {
+      font-size: 12px; color: var(--text2); text-align: center;
+      margin-top: 8px; line-height: 1.5;
+    }
+
+    .feature-list { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+    .feature-item {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .feature-item .fi-icon { font-size: 24px; flex-shrink: 0; }
+    .feature-item .fi-text h4 { font-size: 14px; font-weight: 700; }
+    .feature-item .fi-text p { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+    /* ===================== SCREEN: DRIVE MODE ===================== */
+    #screen-drive {
+      background: var(--bg);
+      position: relative;
+    }
+    #drive-header {
+      background: var(--bg2); padding: 12px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    #drive-header h2 { font-size: 16px; font-weight: 800; color: var(--orange); }
+    #btn-stop-driving {
+      background: var(--red); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700;
+      cursor: pointer;
+    }
+    #drive-content {
+      flex: 1; display: flex; flex-direction: column;
+      padding: 16px; gap: 14px; overflow-y: auto;
+    }
+
+    /* Alert banner */
+    #pothole-alert {
+      background: linear-gradient(135deg, var(--red), #dc2626);
+      border-radius: 16px; padding: 16px 20px;
+      display: none; align-items: center; gap: 12px;
+      animation: pulse-alert 1s ease-in-out infinite;
+    }
+    #pothole-alert.show { display: flex; }
+    #pothole-alert.tesla-mode {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      border: 2px solid var(--orange);
+    }
+    @keyframes pulse-alert {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+    }
+    #alert-icon { font-size: 32px; }
+    #alert-text h3 { font-size: 16px; font-weight: 800; }
+    #alert-text p { font-size: 13px; opacity: 0.9; margin-top: 2px; }
+    #btn-photo-prompt {
+      margin-left: auto; background: #fff; color: #000;
+      border: none; border-radius: 8px; padding: 8px 12px;
+      font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+    }
+
+    /* G-Force meter */
+    .gforce-container {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 16px; padding: 20px;
+    }
+    .gforce-label {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 12px;
+    }
+    .gforce-label h3 { font-size: 14px; color: var(--text2); font-weight: 600; }
+    #gforce-value {
+      font-size: 28px; font-weight: 900; color: var(--green);
+      font-variant-numeric: tabular-nums;
+      transition: color 0.2s;
+    }
+    #gforce-value.warning { color: var(--yellow); }
+    #gforce-value.danger { color: var(--red); }
+    .gforce-bar-track {
+      background: var(--bg4); border-radius: 100px; height: 12px; overflow: hidden;
+      position: relative;
+    }
+    #gforce-bar {
+      height: 100%; border-radius: 100px; width: 0%;
+      background: linear-gradient(90deg, var(--green), var(--yellow), var(--red));
+      transition: width 0.1s;
+    }
+    .gforce-marks {
+      display: flex; justify-content: space-between;
+      margin-top: 4px; font-size: 10px; color: var(--text2);
+    }
+
+    /* Speed + status row */
+    .drive-stats-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+    }
+    .drive-stat {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px;
+      text-align: center;
+    }
+    .drive-stat .ds-val {
+      font-size: 26px; font-weight: 900;
+      font-variant-numeric: tabular-nums; line-height: 1;
+    }
+    .drive-stat .ds-label { font-size: 10px; color: var(--text2); margin-top: 4px; }
+
+    /* Detected potholes live list */
+    .live-list-header {
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .live-list-header h3 { font-size: 14px; font-weight: 700; }
+    #live-pothole-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .live-pothole-item {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px;
+      display: flex; align-items: center; gap: 10px;
+      animation: slide-in 0.3s ease-out;
+    }
+    @keyframes slide-in {
+      from { transform: translateY(-10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .live-pothole-item .lp-icon { font-size: 20px; }
+    .live-pothole-item .lp-info { flex: 1; }
+    .live-pothole-item .lp-time { font-size: 11px; color: var(--text2); }
+    .live-pothole-item .lp-score { font-size: 12px; font-weight: 700; }
+
+    /* Photo verification */
+    #photo-overlay {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,0.95);
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    #photo-overlay.show { display: flex; }
+    #photo-overlay h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; text-align: center; }
+    #photo-overlay p { font-size: 14px; color: var(--text2); text-align: center; margin-bottom: 24px; }
+    #photo-preview {
+      width: 100%; max-width: 340px; border-radius: 16px;
+      object-fit: cover; display: none; margin-bottom: 16px; max-height: 260px;
+    }
+    .photo-actions { display: flex; gap: 10px; width: 100%; max-width: 340px; }
+    #camera-input { display: none; }
+
+    /* ===================== SCREEN: MAP ===================== */
+    #map-container { flex: 1; position: relative; }
+    #leaflet-map { height: 100%; width: 100%; }
+    #map-legend {
+      position: absolute; bottom: 16px; left: 16px; z-index: 1000;
+      background: rgba(10,10,10,0.9); backdrop-filter: blur(10px);
+      border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+    }
+    #map-legend h4 { font-size: 12px; color: var(--text2); margin-bottom: 8px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 4px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    #map-stats {
+      position: absolute; top: 16px; right: 16px; z-index: 1000;
+      background: rgba(10,10,10,0.9); backdrop-filter: blur(10px);
+      border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+      text-align: right;
+    }
+    #map-stats .ms-val { font-size: 22px; font-weight: 900; color: var(--orange); }
+    #map-stats .ms-label { font-size: 10px; color: var(--text2); }
+
+    /* ===================== SCREEN: MY REPORTS ===================== */
+    #reports-list { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; padding: 60px 20px; color: var(--text2); text-align: center;
+    }
+    .empty-state .es-icon { font-size: 48px; }
+    .empty-state h3 { font-size: 18px; color: var(--text); }
+    .empty-state p { font-size: 14px; }
+
+    .report-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 16px; overflow: hidden; cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .report-card:active { border-color: var(--orange); }
+    .report-card-header {
+      display: flex; align-items: center; gap: 12px; padding: 14px;
+    }
+    .report-thumb {
+      width: 56px; height: 56px; border-radius: 10px;
+      object-fit: cover; flex-shrink: 0;
+    }
+    .report-thumb-placeholder {
+      width: 56px; height: 56px; border-radius: 10px;
+      background: var(--bg4); display: flex; align-items: center; justify-content: center;
+      font-size: 24px; flex-shrink: 0;
+    }
+    .report-info { flex: 1; min-width: 0; }
+    .report-info h4 { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .report-info .ri-time { font-size: 11px; color: var(--text2); margin-top: 2px; }
+    .report-info .ri-coords { font-size: 11px; color: var(--text2); }
+    .score-badge {
+      padding: 4px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 800; flex-shrink: 0;
+    }
+    .score-low { background: rgba(239,68,68,0.15); color: var(--red); }
+    .score-med { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    .score-high { background: rgba(34,197,94,0.15); color: var(--green); }
+
+    /* ===================== SCREEN: REPORT DETAIL ===================== */
+    #screen-detail { position: fixed; inset: 0; z-index: 200; background: var(--bg); }
+    #screen-detail .scroll-area { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    #detail-photo {
+      width: 100%; border-radius: 16px; object-fit: cover;
+      max-height: 220px; display: none;
+    }
+    #detail-photo-placeholder {
+      width: 100%; height: 120px; border-radius: 16px;
+      background: var(--bg3); display: flex; align-items: center; justify-content: center;
+      font-size: 48px; color: var(--text2);
+    }
+    .detail-section {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .detail-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-row .dr-label { font-size: 12px; color: var(--text2); min-width: 90px; flex-shrink: 0; padding-top: 1px; }
+    .detail-row .dr-val { font-size: 14px; font-weight: 600; }
+    .report-text-box {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px; font-size: 13px;
+      font-family: 'Courier New', monospace; white-space: pre-wrap;
+      color: var(--text); line-height: 1.6;
+    }
+    .detail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .detail-links { display: flex; flex-direction: column; gap: 8px; }
+    .city-link {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 14px;
+      color: var(--text); text-decoration: none;
+      font-size: 14px; transition: border-color 0.15s;
+    }
+    .city-link:active { border-color: var(--orange); }
+
+    /* ===================== SCREEN: SETTINGS ===================== */
+    #screen-settings .scroll-area { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    .settings-section {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .settings-section-title {
+      padding: 12px 16px; font-size: 12px; font-weight: 700;
+      color: var(--text2); text-transform: uppercase; letter-spacing: 1px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row .sr-label { flex: 1; }
+    .settings-row .sr-label h4 { font-size: 15px; font-weight: 600; }
+    .settings-row .sr-label p { font-size: 12px; color: var(--text2); margin-top: 2px; }
+    .toggle {
+      width: 48px; height: 28px; border-radius: 100px;
+      background: var(--bg4); position: relative; cursor: pointer;
+      transition: background 0.2s; flex-shrink: 0; border: none;
+    }
+    .toggle.on { background: var(--orange); }
+    .toggle::after {
+      content: ''; position: absolute;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #fff; top: 3px; left: 3px;
+      transition: left 0.2s;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    .toggle.on::after { left: 23px; }
+
+    .input-field {
+      width: 100%; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 15px;
+      padding: 10px 12px; outline: none;
+    }
+    .input-field:focus { border-color: var(--orange); }
+    .settings-input-row { flex-direction: column; align-items: stretch; gap: 8px; }
+    .settings-input-row h4 { font-size: 14px; font-weight: 600; }
+
+    .sensitivity-slider {
+      width: 100%; -webkit-appearance: none; appearance: none;
+      height: 4px; border-radius: 100px; outline: none;
+      background: linear-gradient(90deg, var(--orange) var(--val, 50%), var(--bg4) var(--val, 50%));
+    }
+    .sensitivity-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--orange); cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+
+    .tesla-banner {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      border: 1px solid var(--orange); border-radius: var(--radius);
+      padding: 16px; display: none;
+    }
+    .tesla-banner.show { display: block; }
+    .tesla-banner h4 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+    .tesla-banner p { font-size: 13px; color: var(--text2); margin-bottom: 12px; line-height: 1.5; }
+
+    /* ===================== TOAST ===================== */
+    #toast-container {
+      position: fixed; top: calc(16px + var(--safe-top)); left: 50%; transform: translateX(-50%);
+      z-index: 9999; display: flex; flex-direction: column; gap: 8px;
+      pointer-events: none; width: calc(100% - 32px); max-width: 400px;
+    }
+    .toast {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px 16px;
+      font-size: 14px; font-weight: 600;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      animation: toast-in 0.3s ease-out, toast-out 0.3s ease-in 2.7s forwards;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .toast.success { border-color: var(--green); }
+    .toast.error { border-color: var(--red); }
+    .toast.info { border-color: var(--orange); }
+    @keyframes toast-in {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes toast-out {
+      from { opacity: 1; }
+      to { opacity: 0; pointer-events: none; }
+    }
+
+    /* ===================== MISC ===================== */
+    .verified-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(249,115,22,0.15); color: var(--orange);
+      font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 20px; border: 1px solid rgba(249,115,22,0.3);
+    }
+    .pulse-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); display: inline-block;
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.5); opacity: 0.5; }
+    }
+    .loading { color: var(--text2); font-size: 13px; padding: 8px; }
+
+    /* Approach alert bar */
+    #approach-alert {
+      position: fixed; bottom: calc(70px + var(--safe-bot)); left: 16px; right: 16px;
+      z-index: 500; background: rgba(249,115,22,0.95);
+      border-radius: 14px; padding: 14px 18px;
+      display: none; align-items: center; gap: 10px;
+      box-shadow: 0 4px 24px rgba(249,115,22,0.4);
+      animation: slide-up 0.3s ease-out;
+    }
+    #approach-alert.show { display: flex; }
+    @keyframes slide-up {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    #approach-alert .aa-icon { font-size: 24px; }
+    #approach-alert .aa-text { font-size: 14px; font-weight: 700; color: #000; }
+
+    /* Leaflet popup tweaks */
+    .leaflet-popup-content-wrapper {
+      background: var(--bg2) !important; color: var(--text) !important;
+      border: 1px solid var(--border) !important; border-radius: 12px !important;
+    }
+    .leaflet-popup-tip { background: var(--bg2) !important; }
+    .popup-content h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .popup-content p { font-size: 12px; color: var(--text2); margin: 2px 0; }
+
+    /* Welcome install banner */
+    #install-banner {
+      background: linear-gradient(135deg, var(--bg2), var(--bg3));
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; display: none;
+      align-items: center; gap: 12px;
+      margin: 0 20px;
+    }
+    #install-banner.show { display: flex; }
+    #install-banner p { flex: 1; font-size: 13px; color: var(--text2); }
+    #install-banner .ib-icon { font-size: 24px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============= HOME SCREEN ============= -->
+  <div id="screen-home" class="screen active">
+    <div class="scroll-area">
+      <div class="logo-area">
+        <div class="logo">🕳️</div>
+        <h1>PotholeNet</h1>
+        <p class="tagline">Community pothole detection · GPS logging · City reports</p>
+      </div>
+
+      <div id="install-banner">
+        <span class="ib-icon">📲</span>
+        <p>Add to Home Screen for the best experience — tap Share → Add to Home Screen</p>
+        <button onclick="document.getElementById('install-banner').classList.remove('show')" style="background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="stat-today">0</div>
+          <div class="stat-label">Reported Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-total">0</div>
+          <div class="stat-label">Total Detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-verified">0</div>
+          <div class="stat-label">With Photos</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-score">-</div>
+          <div class="stat-label">Avg Confidence</div>
+        </div>
+      </div>
+
+      <div class="start-section">
+        <button class="btn btn-primary" id="btn-start-driving">
+          🚗 START DRIVING
+        </button>
+        <p class="permission-note">Requires motion + location permissions · Only start when parked or as passenger</p>
+      </div>
+
+      <div class="feature-list">
+        <div class="feature-item">
+          <span class="fi-icon">📡</span>
+          <div class="fi-text">
+            <h4>Auto-Detection</h4>
+            <p>Accelerometer monitors Z-axis jolts in real-time</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="fi-icon">📍</span>
+          <div class="fi-text">
+            <h4>GPS Logging</h4>
+            <p>Every pothole saved with precise coordinates</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="fi-icon">📸</span>
+          <div class="fi-text">
+            <h4>Photo Verification</h4>
+            <p>Snap a photo for +25 trust score boost</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="fi-icon">🏙️</span>
+          <div class="fi-text">
+            <h4>City Reports</h4>
+            <p>One-tap formatted reports for 311 and SeeClickFix</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= DRIVE MODE ============= -->
+  <div id="screen-drive" class="screen">
+    <div id="drive-header">
+      <div>
+        <h2>🚗 DRIVE MODE</h2>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;">
+          <span class="pulse-dot"></span> Monitoring active
+        </div>
+      </div>
+      <button id="btn-stop-driving">⏹ STOP</button>
+    </div>
+
+    <div id="drive-content">
+      <!-- Pothole alert banner -->
+      <div id="pothole-alert">
+        <span id="alert-icon">🕳️</span>
+        <div id="alert-text">
+          <h3 id="alert-title">Pothole Detected!</h3>
+          <p id="alert-subtitle">Logging location...</p>
+        </div>
+        <button id="btn-photo-prompt">📸 Verify</button>
+      </div>
+
+      <!-- G-Force meter -->
+      <div class="gforce-container">
+        <div class="gforce-label">
+          <h3>G-Force (Z-axis)</h3>
+          <span id="gforce-value">0.00g</span>
+        </div>
+        <div class="gforce-bar-track">
+          <div id="gforce-bar"></div>
+        </div>
+        <div class="gforce-marks">
+          <span>0g</span><span>1g</span><span>2g</span><span>3g+</span>
+        </div>
+      </div>
+
+      <!-- Speed + counts -->
+      <div class="drive-stats-row">
+        <div class="drive-stat">
+          <div class="ds-val" id="drive-speed" style="color:var(--green)">--</div>
+          <div class="ds-label">km/h</div>
+        </div>
+        <div class="drive-stat">
+          <div class="ds-val" id="drive-count" style="color:var(--orange)">0</div>
+          <div class="ds-label">This Session</div>
+        </div>
+        <div class="drive-stat">
+          <div class="ds-val" id="drive-accuracy" style="color:var(--text2)">--</div>
+          <div class="ds-label">GPS ±m</div>
+        </div>
+      </div>
+
+      <!-- Live log -->
+      <div>
+        <div class="live-list-header">
+          <h3>Detected This Session</h3>
+          <span id="session-count" style="font-size:12px;color:var(--text2)">0 potholes</span>
+        </div>
+        <div id="live-pothole-list"></div>
+        <div id="live-empty" style="color:var(--text2);font-size:13px;text-align:center;padding:20px;">
+          No potholes detected yet — drive around!
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= MAP VIEW ============= -->
+  <div id="screen-map" class="screen">
+    <div id="map-container">
+      <div id="leaflet-map"></div>
+      <div id="map-stats">
+        <div class="ms-val" id="map-total">0</div>
+        <div class="ms-label">Total potholes</div>
+      </div>
+      <div id="map-legend">
+        <h4>Trust Score</h4>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> Low &lt;40</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> Medium 40–70</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> High 70+</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= MY REPORTS ============= -->
+  <div id="screen-reports" class="screen">
+    <div class="screen-header">
+      <span>📋</span>
+      <h2>My Reports</h2>
+      <span class="badge" id="reports-badge">0</span>
+    </div>
+    <div class="scroll-area">
+      <div id="reports-list"></div>
+    </div>
+  </div>
+
+  <!-- ============= SETTINGS ============= -->
+  <div id="screen-settings" class="screen">
+    <div class="screen-header">
+      <span>⚙️</span>
+      <h2>Settings</h2>
+    </div>
+    <div class="scroll-area">
+      <div class="settings-section">
+        <div class="settings-section-title">👤 Profile</div>
+        <div class="settings-row settings-input-row">
+          <h4>Your Name</h4>
+          <input type="text" class="input-field" id="profile-name" placeholder="Enter your name" />
+        </div>
+        <div class="settings-row settings-input-row">
+          <h4>Email Address</h4>
+          <input type="email" class="input-field" id="profile-email" placeholder="you@example.com" />
+        </div>
+        <div class="settings-row">
+          <div class="sr-label">
+            <h4 id="profile-status-label">Not verified</h4>
+            <p>Verified reporters get +20 trust score on all reports</p>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btn-save-profile">Save</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">🎛️ Detection Sensitivity</div>
+        <div class="settings-row settings-input-row">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h4>G-Force Threshold</h4>
+            <span id="sensitivity-val" style="color:var(--orange);font-weight:700;font-size:14px;">2.5g</span>
+          </div>
+          <input type="range" class="sensitivity-slider" id="sensitivity-slider"
+            min="1" max="5" step="0.1" value="2.5" />
+          <p style="font-size:12px;color:var(--text2);">
+            Lower = more sensitive (more detections) · Higher = only severe potholes
+          </p>
+        </div>
+        <div class="settings-row">
+          <div class="sr-label">
+            <h4>Approach Alert Distance</h4>
+            <p>Warn when within this range of known potholes</p>
+          </div>
+          <select class="input-field" id="alert-distance" style="width:90px;padding:8px;">
+            <option value="50">50m</option>
+            <option value="100">100m</option>
+            <option value="150" selected>150m</option>
+            <option value="200">200m</option>
+            <option value="300">300m</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">🚗 Tesla Mode</div>
+        <div class="settings-row">
+          <div class="sr-label">
+            <h4>Tesla Autopilot Advisory</h4>
+            <p>Show Tesla-themed alerts when a pothole is detected</p>
+          </div>
+          <button class="toggle" id="tesla-toggle" aria-label="Toggle Tesla mode"></button>
+        </div>
+        <div class="tesla-banner" id="tesla-banner">
+          <h4>🚗 Tesla Integration</h4>
+          <p>Real Tesla API integration requires OAuth 2.0 with Tesla's Fleet API. Connect your vehicle to receive pothole data from PotholeNet.</p>
+          <button class="btn btn-secondary btn-sm btn-full" id="btn-connect-tesla">Connect Tesla Account →</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">📊 Stats</div>
+        <div class="settings-row">
+          <div class="sr-label"><h4>Total Potholes Detected</h4></div>
+          <span id="stats-total" style="font-size:18px;font-weight:800;color:var(--orange);">0</span>
+        </div>
+        <div class="settings-row">
+          <div class="sr-label"><h4>With Photo Verification</h4></div>
+          <span id="stats-photos" style="font-size:18px;font-weight:800;color:var(--orange);">0</span>
+        </div>
+        <div class="settings-row">
+          <div class="sr-label"><h4>Average Trust Score</h4></div>
+          <span id="stats-avg" style="font-size:18px;font-weight:800;color:var(--orange);">-</span>
+        </div>
+        <div class="settings-row">
+          <div class="sr-label">
+            <h4>Clear All Data</h4>
+            <p>Delete all pothole reports from this device</p>
+          </div>
+          <button class="btn btn-danger btn-sm" id="btn-clear-data">Clear</button>
+        </div>
+      </div>
+
+      <div style="text-align:center;padding:24px;color:var(--text2);font-size:12px;">
+        PotholeNet v1.0.0 · Made with 🧡 for safer roads<br>
+        <span style="font-size:11px;">Data stored locally on your device</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============= REPORT DETAIL (overlay) ============= -->
+  <div id="screen-detail" class="screen">
+    <div class="screen-header">
+      <button class="btn-icon btn-secondary" id="btn-back-detail" style="width:36px;height:36px;font-size:16px;">←</button>
+      <h2>Report Detail</h2>
+    </div>
+    <div class="scroll-area">
+      <img id="detail-photo" alt="Pothole photo" />
+      <div id="detail-photo-placeholder">🕳️</div>
+
+      <div class="detail-section" id="detail-info-section">
+        <div class="detail-row">
+          <span class="dr-label">Address</span>
+          <span class="dr-val" id="detail-address">Loading...</span>
+        </div>
+        <div class="detail-row">
+          <span class="dr-label">GPS</span>
+          <span class="dr-val" id="detail-gps">—</span>
+        </div>
+        <div class="detail-row">
+          <span class="dr-label">Date/Time</span>
+          <span class="dr-val" id="detail-time">—</span>
+        </div>
+        <div class="detail-row">
+          <span class="dr-label">Trust Score</span>
+          <span class="dr-val" id="detail-score">—</span>
+        </div>
+        <div class="detail-row">
+          <span class="dr-label">Photo</span>
+          <span class="dr-val" id="detail-photo-status">Not attached</span>
+        </div>
+        <div class="detail-row">
+          <span class="dr-label">Reporter</span>
+          <span class="dr-val" id="detail-reporter">Anonymous</span>
+        </div>
+      </div>
+
+      <div>
+        <h3 style="font-size:14px;color:var(--text2);margin-bottom:8px;">📋 CITY REPORT</h3>
+        <div class="report-text-box" id="detail-report-text"></div>
+      </div>
+
+      <div class="detail-actions">
+        <button class="btn btn-secondary" id="btn-copy-report" style="flex:1;">📋 Copy Report</button>
+        <button class="btn btn-primary" id="btn-share-report" style="flex:1;">📤 Share</button>
+      </div>
+
+      <div>
+        <h3 style="font-size:14px;color:var(--text2);margin-bottom:8px;">🏙️ SUBMIT TO CITY</h3>
+        <div class="detail-links">
+          <a href="https://311.gov" target="_blank" rel="noopener" class="city-link">
+            <span>🏛️</span> 311.gov — Federal 311 Portal
+          </a>
+          <a href="https://seeclickfix.com" target="_blank" rel="noopener" class="city-link">
+            <span>📍</span> SeeClickFix — Community Issues
+          </a>
+          <a href="https://fixmystreet.com" target="_blank" rel="noopener" class="city-link">
+            <span>🛣️</span> FixMyStreet — Road Reporting
+          </a>
+        </div>
+      </div>
+
+      <div style="height:16px;"></div>
+    </div>
+  </div>
+
+  <!-- ============= BOTTOM NAV ============= -->
+  <nav id="nav">
+    <button class="nav-btn active" data-screen="home">
+      <span class="nav-icon">🏠</span>
+      Home
+    </button>
+    <button class="nav-btn" data-screen="drive">
+      <span class="nav-icon">🚗</span>
+      Drive
+    </button>
+    <button class="nav-btn" data-screen="map">
+      <span class="nav-icon">🗺️</span>
+      Map
+    </button>
+    <button class="nav-btn" data-screen="reports">
+      <span class="nav-icon">📋</span>
+      Reports
+    </button>
+    <button class="nav-btn" data-screen="settings">
+      <span class="nav-icon">⚙️</span>
+      Settings
+    </button>
+  </nav>
+
+  <!-- ============= APPROACH ALERT BAR ============= -->
+  <div id="approach-alert">
+    <span class="aa-icon">⚠️</span>
+    <span class="aa-text" id="approach-text">Pothole ahead in 120m</span>
+  </div>
+
+  <!-- ============= PHOTO OVERLAY ============= -->
+  <div id="photo-overlay">
+    <h3>📸 Verify This Pothole</h3>
+    <p>Take a photo to add +25 trust score boost and help verify this report</p>
+    <img id="photo-preview" alt="Preview" />
+    <div class="photo-actions">
+      <button class="btn btn-primary" style="flex:1;" id="btn-take-photo">📷 Take Photo</button>
+      <button class="btn btn-secondary" style="flex:1;" id="btn-skip-photo">Skip</button>
+    </div>
+    <input type="file" id="camera-input" accept="image/*" capture="environment" />
+  </div>
+
+  <!-- ============= TOAST CONTAINER ============= -->
+  <div id="toast-container"></div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
