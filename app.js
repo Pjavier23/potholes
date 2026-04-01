@@ -14,7 +14,7 @@ const PROFILE_KEY = 'potholes_profile_v1';
 const SETTINGS_KEY = 'potholes_settings_v1';
 
 const DEFAULT_SETTINGS = {
-  sensitivity: 2.5,     // G-force threshold
+  sensitivity: 1.5,     // G-force threshold (lowered for better detection)
   alertDistance: 150,   // meters
   teslaMode: false,
 };
@@ -282,7 +282,7 @@ function handleMotion(event) {
 
   // Smooth with a small buffer
   motionBuffer.push(gForce);
-  if (motionBuffer.length > 5) motionBuffer.shift();
+  if (motionBuffer.length > 2) motionBuffer.shift(); // smaller buffer = faster response
   const smoothed = motionBuffer.reduce((a,b) => a+b, 0) / motionBuffer.length;
 
   currentGForce = smoothed;
@@ -521,6 +521,16 @@ async function startDriving() {
   document.getElementById('live-empty').style.display = '';
   document.getElementById('drive-count').textContent = '0';
   document.getElementById('session-count').textContent = '0 potholes';
+  // Add quick report button if not already there
+  const driveScreen = document.getElementById('screen-drive');
+  if (driveScreen && !document.getElementById('quickReportBtn')) {
+    const btn = document.createElement('button');
+    btn.id = 'quickReportBtn';
+    btn.innerHTML = '🕳️ Report Pothole';
+    btn.style.cssText = 'position:fixed;bottom:160px;left:50%;transform:translateX(-50%);background:#f97316;color:#000;border:none;border-radius:999px;padding:16px 32px;font-size:18px;font-weight:900;z-index:100;box-shadow:0 4px 20px rgba(249,115,22,0.5);cursor:pointer;';
+    btn.onclick = () => onPotholeDetected();
+    driveScreen.appendChild(btn);
+  }
   document.getElementById('drive-speed').textContent = '--';
   document.getElementById('drive-accuracy').textContent = '--';
   updateGForceMeter(0);
