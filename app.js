@@ -114,6 +114,9 @@ function showScreen(name) {
   if (name === 'map') {
     initMap();
     refreshMapMarkers();
+    // Fix blank map on mobile - invalidate after render
+    setTimeout(() => { if (map) { map.invalidateSize(true); } }, 200);
+    setTimeout(() => { if (map) { map.invalidateSize(true); } }, 600);
   }
   if (name === 'reports') renderReportsList();
   if (name === 'settings') renderSettings();
@@ -378,7 +381,7 @@ function showPotholeAlert(pothole) {
   }
 
   alertEl.classList.add('show');
-  setTimeout(() => alertEl.classList.remove('show'), 5000);
+  setTimeout(() => alertEl.classList.remove('show'), 8000);
 }
 
 function addToLiveList(pothole) {
@@ -492,7 +495,7 @@ function showApproachAlert(distanceM, pothole) {
   }
 
   alertEl.classList.add('show');
-  setTimeout(() => alertEl.classList.remove('show'), 5000);
+  setTimeout(() => alertEl.classList.remove('show'), 8000);
 }
 
 // ============================================================
@@ -527,7 +530,7 @@ async function startDriving() {
     const btn = document.createElement('button');
     btn.id = 'quickReportBtn';
     btn.innerHTML = '🕳️ Report Pothole';
-    btn.style.cssText = 'position:fixed;bottom:160px;left:50%;transform:translateX(-50%);background:#f97316;color:#000;border:none;border-radius:999px;padding:16px 32px;font-size:18px;font-weight:900;z-index:100;box-shadow:0 4px 20px rgba(249,115,22,0.5);cursor:pointer;';
+    btn.style.cssText = 'position:fixed;bottom:200px;left:50%;transform:translateX(-50%);background:#f97316;color:#000;border:none;border-radius:999px;padding:14px 28px;font-size:16px;font-weight:900;z-index:100;box-shadow:0 4px 20px rgba(249,115,22,0.5);cursor:pointer;opacity:0.85;';
     btn.onclick = () => onPotholeDetected();
     driveScreen.appendChild(btn);
   }
@@ -650,18 +653,18 @@ function initMap() {
     zoomControl: true,
   });
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-    maxZoom: 19,
-  }).addTo(map);
-
-  // Dark tile overlay hint: use CartoDB dark
-  // Actually switch to CartoDB dark for the dark theme
-  map.eachLayer(layer => map.removeLayer(layer));
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  // Try CartoDB dark first, fallback to OSM
+  const darkTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '© CartoDB © OpenStreetMap',
     maxZoom: 19,
-  }).addTo(map);
+    errorTileUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  });
+  const osmTile = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19,
+  });
+  darkTile.addTo(map);
+  darkTile.on('tileerror', () => { map.removeLayer(darkTile); osmTile.addTo(map); });
 }
 
 function potholeIcon(score) {
@@ -686,20 +689,29 @@ function refreshMapMarkers() {
     const score = p.score || calcScore(p);
     const marker = L.marker([p.lat, p.lng], { icon: potholeIcon(score) });
 
-    marker.bindPopup(`
-      <div class="popup-content">
-        <h4>${scoreEmoji(score)} Pothole ${score}% confidence</h4>
-        <p>📍 ${p.address || 'Geocoding...'}</p>
-        <p>🕐 ${new Date(p.timestamp).toLocaleString()}</p>
-        <p>📸 ${p.photo ? 'Photo attached' : 'No photo'}</p>
+    const popupHtml = `
+      <div style="font-family:system-ui;min-width:200px;color:#333;">
+        <b>${scoreEmoji(score)} Pothole — ${score}% confidence</b><br>
+        📍 ${p.address || (p.lat ? p.lat.toFixed(5)+', '+p.lng.toFixed(5) : 'Unknown')}<br>
+        🕐 ${new Date(p.timestamp).toLocaleString()}<br>
+        💨 ${p.speed || 0} mph &nbsp;|&nbsp; ⚡ ${p.gForce ? p.gForce.toFixed(2)+'g' : 'N/A'}<br>
+        📸 ${p.photo ? '<span style=color:green>Photo attached ✓</span>' : 'No photo'}<br>
+        <div style="margin-top:8px;display:flex;gap:8px;">
+          <button onclick="deletePothole('${p.id}')" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:700;">🗑️ Delete</button>
+          <button onclick="reportPotholeToCity('${p.id}')" style="background:#f97316;color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-weight:700;">📤 Report</button>
+        </div>
+        ${p.photo ? '<img src="'+p.photo+'" style="width:100%;margin-top:8px;border-radius:6px;" />' : ''}
       </div>
-    `);
+    `;
+    marker.bindPopup(popupHtml, { maxWidth: 280 });
 
     marker.addTo(map);
     mapMarkers[p.id] = marker;
   });
 
   document.getElementById('map-total').textContent = potholes.length;
+  // Force map to recalculate size (fixes blank map on mobile)
+  setTimeout(() => { if (map) map.invalidateSize(); }, 100);
 
   // Fit to markers if any
   if (potholes.length > 0) {
