@@ -417,7 +417,7 @@ function startGPS() {
         lng: pos.coords.longitude,
         accuracy: Math.round(pos.coords.accuracy),
       };
-      currentSpeed = pos.coords.speed != null ? Math.round(pos.coords.speed * 3.6) : 0; // m/s to km/h
+      currentSpeed = pos.coords.speed != null ? Math.round(pos.coords.speed * 2.237) : 0; // m/s to mph
       currentHeading = pos.coords.heading;
 
       const speedEl = document.getElementById('drive-speed');
@@ -526,7 +526,32 @@ async function startDriving() {
   updateGForceMeter(0);
 
   setupMotion();
-  startGPS();
+  
+  // Proactively request GPS permission before starting
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        currentLocation = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: Math.round(pos.coords.accuracy),
+        };
+        showToast('📍 GPS locked!', 'success');
+        startGPS();
+      },
+      err => {
+        if (err.code === 1) {
+          showToast('⚠️ Location denied — enable in browser settings', 'error');
+        } else {
+          showToast('📍 Acquiring GPS...', 'info');
+          startGPS();
+        }
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+  } else {
+    showToast('GPS not supported on this device', 'error');
+  }
 
   // Force to drive screen
   activeScreen = 'drive';
